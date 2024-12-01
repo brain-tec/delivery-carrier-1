@@ -24,8 +24,12 @@ addon | version | maintainers | summary
 [base_delivery_carrier_label](base_delivery_carrier_label/) | 17.0.1.0.3 |  | Base module for carrier labels
 [delivery_carrier_account](delivery_carrier_account/) | 17.0.1.0.0 |  | Delivery Carrier Account
 [delivery_carrier_info](delivery_carrier_info/) | 17.0.1.0.0 |  | Add code on carrier
+[delivery_carrier_partner](delivery_carrier_partner/) | 17.0.1.0.0 |  | Add a partner in the delivery carrier
+[delivery_package_number](delivery_package_number/) | 17.0.1.0.0 |  | Set or compute number of packages for a picking
 [delivery_roulier](delivery_roulier/) | 17.0.1.0.0 | [![florian-dacosta](https://github.com/florian-dacosta.png?size=30px)](https://github.com/florian-dacosta) | Integration of multiple carriers
 [delivery_roulier_option](delivery_roulier_option/) | 17.0.1.0.0 | [![florian-dacosta](https://github.com/florian-dacosta.png?size=30px)](https://github.com/florian-dacosta) | Add options to roulier modules
+[delivery_state](delivery_state/) | 17.0.1.0.0 |  | Provides fields to be able to contemplate the tracking statesand also adds a global fields
+[sale_order_warehouse_from_delivery_carrier](sale_order_warehouse_from_delivery_carrier/) | 17.0.1.0.0 |  | Sale Order WH from Delivery Carrier
 
 [//]: # (end addons)
 
