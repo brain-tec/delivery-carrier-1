@@ -168,11 +168,13 @@ class NacexDeliveryCarrier(models.Model):
         if not recipient.zip or not recipient.city or not recipient.country_id:
             raise UserError(self.env._("Please define a correct recipient address."))
 
-        if picking.package_ids:
-            package_count = str(len(picking.package_ids))
-            total_weight = sum(picking.package_ids.mapped("shipping_weight"))
+        # Get packages from move lines
+        packages = picking.move_line_ids.result_package_id
+        if packages:
+            package_count = str(len(packages))
+            total_weight = sum(packages.mapped("shipping_weight"))
         else:
-            package_count = str(picking.number_of_packages or 1)
+            package_count = "1"
             total_weight = picking.shipping_weight or 0.0
 
         data = {
