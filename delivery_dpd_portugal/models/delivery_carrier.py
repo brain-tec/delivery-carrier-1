@@ -124,8 +124,8 @@ class DeliveryCarrier(models.Model):
         shipment_data = self._prepare_dpd_portugal_shipment_data(order)
 
         try:
-            rate_response = self._dpd_portugal_request(
-                "shipment/rate", json=shipment_data
+            rate_response = self._dpd_portugal_request_with_account(
+                "shipment/rate", shipment_data, order
             ).json()
 
             if "price" in rate_response:
@@ -210,7 +210,8 @@ class DeliveryCarrier(models.Model):
                 # Send email if enabled
                 if self.dpd_portugal_send_label_email and picking.partner_id.email:
                     template = self.env.ref(
-                        "delivery_dpd_portugal.email_template_dpd_label"
+                        "delivery_dpd_portugal.email_template_dpd_label",
+                        raise_if_not_found=False,
                     )
                     if template:
                         template.send_mail(
@@ -286,8 +287,8 @@ class DeliveryCarrier(models.Model):
         """Cancel DPD Portugal shipment."""
         self.ensure_one()
         for picking in pickings:
-            if self.delivery_type != "dpd_portugal" or not picking.carrier_tracking_ref:
-                return super().cancel_shipment(pickings)
+            if not picking.carrier_tracking_ref:
+                continue
 
             response = self._dpd_portugal_request_with_account(
                 f"shipment/cancel/{picking.carrier_tracking_ref}", {}, picking
@@ -328,9 +329,11 @@ class DeliveryCarrier(models.Model):
             )
 
         # Get package dimensions
-        if source.package_ids:
+        # In Odoo 19, packages are accessed via move_line_ids.result_package_id
+        packages = source.move_line_ids.result_package_id
+        if packages:
             # Use first package dimensions
-            package = source.package_ids[0]
+            package = packages[0]
             dimensions = {
                 "length": package.length or 10,
                 "width": package.width or 10,
