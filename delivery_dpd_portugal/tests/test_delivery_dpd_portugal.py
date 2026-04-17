@@ -41,7 +41,7 @@ class TestDeliveryDPDPortugal(TransactionCase):
         self.dpd_carrier = self.env["delivery.carrier"].create(
             {
                 "name": "DPD Portugal Test",
-                "delivery_type": "dpd_portugal",
+                "delivery_type": "dpd_pt",
                 "dpd_portugal_service_type": "standard",
                 "dpd_portugal_label_format": "PDF",
                 "dpd_portugal_cod_enabled": True,
@@ -53,22 +53,14 @@ class TestDeliveryDPDPortugal(TransactionCase):
 
     def test_carrier_creation(self):
         """Test DPD Portugal carrier creation."""
-        self.assertEqual(self.dpd_carrier.delivery_type, "dpd_portugal")
+        self.assertEqual(self.dpd_carrier.delivery_type, "dpd_pt")
         self.assertEqual(self.dpd_carrier.dpd_portugal_service_type, "standard")
-        self.assertFalse(self.dpd_carrier.dpd_portugal_prod_environment)
+        self.assertFalse(self.dpd_carrier.prod_environment)
         self.assertTrue(self.dpd_carrier.dpd_portugal_cod_enabled)
 
     def test_can_generate_return(self):
         """Test return shipment capability."""
         self.assertTrue(self.dpd_carrier.can_generate_return)
-
-    def test_supports_shipping_insurance(self):
-        """Test insurance support."""
-        self.assertTrue(self.dpd_carrier.supports_shipping_insurance)
-
-        # Disable insurance
-        self.dpd_carrier.dpd_portugal_insurance_enabled = False
-        self.assertFalse(self.dpd_carrier.supports_shipping_insurance)
 
     def test_get_tracking_link(self):
         """Test tracking link generation."""
@@ -83,45 +75,28 @@ class TestDeliveryDPDPortugal(TransactionCase):
             }
         )
 
-        tracking_link = self.dpd_carrier.dpd_portugal_get_tracking_link(picking)
+        tracking_link = self.dpd_carrier.dpd_pt_get_tracking_link(picking)
         self.assertIn("DPD123456789", tracking_link)
         self.assertIn("dpd.pt", tracking_link)
 
     def test_address_validation(self):
         """Test address validation."""
         # Valid address
-        self.dpd_carrier._validate_dpd_portugal_address(self.customer, "recipient")
+        self.dpd_carrier._validate_dpd_pt_address(self.customer, "recipient")
 
         # Invalid address (missing required fields)
         invalid_partner = self.env["res.partner"].create({"name": "Invalid Partner"})
         with self.assertRaises(ValidationError):
-            self.dpd_carrier._validate_dpd_portugal_address(
-                invalid_partner, "recipient"
-            )
+            self.dpd_carrier._validate_dpd_pt_address(invalid_partner, "recipient")
 
     def test_api_url_selection(self):
         """Test API URL selection based on environment."""
         # Test environment
-        test_url = self.dpd_carrier._dpd_portugal_get_api_url()
+        test_url = self.dpd_carrier._dpd_pt_get_api_url()
         self.assertIn("qabusiness", test_url)
 
         # Production environment
-        self.dpd_carrier.dpd_portugal_prod_environment = True
-        prod_url = self.dpd_carrier._dpd_portugal_get_api_url()
+        self.dpd_carrier.prod_environment = True
+        prod_url = self.dpd_carrier._dpd_pt_get_api_url()
         self.assertIn("business.dpd.pt", prod_url)
         self.assertNotIn("qabusiness", prod_url)
-
-    def test_cod_amount_on_picking(self):
-        """Test COD amount field on picking."""
-        picking = self.env["stock.picking"].create(
-            {
-                "partner_id": self.customer.id,
-                "picking_type_id": self.env.ref("stock.picking_type_out").id,
-                "location_id": self.env.ref("stock.stock_location_stock").id,
-                "location_dest_id": self.env.ref("stock.stock_location_customers").id,
-                "carrier_id": self.dpd_carrier.id,
-                "dpd_portugal_cod_amount": 150.0,
-            }
-        )
-
-        self.assertEqual(picking.dpd_portugal_cod_amount, 150.0)

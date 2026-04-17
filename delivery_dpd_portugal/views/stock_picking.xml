@@ -11,7 +11,7 @@
             <field name="carrier_id" position="after">
                 <field
                     name="dpd_portugal_cod_amount"
-                    invisible="carrier_id.delivery_type != 'dpd_portugal' or not carrier_id.dpd_portugal_cod_enabled"
+                    invisible="carrier_id.delivery_type != 'dpd_pt' or not carrier_id.dpd_portugal_cod_enabled"
                 />
             </field>
         </field>

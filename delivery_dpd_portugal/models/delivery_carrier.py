@@ -1,6 +1,5 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-import base64
 import logging
 
 import requests
@@ -18,17 +17,11 @@ class DeliveryCarrier(models.Model):
     _inherit = "delivery.carrier"
 
     delivery_type = fields.Selection(
-        selection_add=[("dpd_portugal", "DPD Portugal")],
-        ondelete={"dpd_portugal": "set default"},
+        selection_add=[("dpd_pt", "DPD Portugal")],
+        ondelete={"dpd_pt": "set default"},
     )
 
     # DPD Portugal API Configuration
-    dpd_portugal_prod_environment = fields.Boolean(
-        string="Production Environment",
-        default=False,
-        help="Use production API instead of test environment",
-    )
-
     dpd_portugal_service_type = fields.Selection(
         [
             ("standard", "Standard"),
@@ -100,7 +93,7 @@ class DeliveryCarrier(models.Model):
         """Compute if carrier can generate return shipments."""
         result = super()._compute_can_generate_return()
         for carrier in self:
-            if carrier.delivery_type == "dpd_portugal":
+            if carrier.delivery_type == "dpd_pt":
                 carrier.can_generate_return = True
         return result
 
@@ -109,42 +102,19 @@ class DeliveryCarrier(models.Model):
         """Compute if carrier supports shipping insurance."""
         result = super()._compute_supports_shipping_insurance()
         for carrier in self:
-            if carrier.delivery_type == "dpd_portugal":
+            if carrier.delivery_type == "dpd_pt":
                 carrier.supports_shipping_insurance = (
                     carrier.dpd_portugal_insurance_enabled
                 )
         return result
 
-    def dpd_portugal_rate_shipment(self, order):
+    def dpd_pt_rate_shipment(self, order):
         """Get shipping rates from DPD Portugal."""
-        if self.delivery_type != "dpd_portugal":
-            return super().rate_shipment(order)
-
-        # Prepare shipment data for rate calculation
-        shipment_data = self._prepare_dpd_portugal_shipment_data(order)
-
+        shipment_data = self._prepare_dpd_pt_shipment_data(order)
         try:
-            rate_response = self._dpd_portugal_request_with_account(
+            rate_response = self._dpd_pt_request_with_account(
                 "shipment/rate", shipment_data, order
             ).json()
-
-            if "price" in rate_response:
-                return {
-                    "success": True,
-                    "price": rate_response["price"],
-                    "error_message": False,
-                    "warning_message": False,
-                }
-            else:
-                return {
-                    "success": False,
-                    "price": 0.0,
-                    "error_message": self.env._(
-                        "Unable to calculate rate: %(message)s",
-                        message=rate_response.get("message", "Unknown error"),
-                    ),
-                    "warning_message": False,
-                }
         except Exception as e:
             return {
                 "success": False,
@@ -156,23 +126,36 @@ class DeliveryCarrier(models.Model):
                 "warning_message": False,
             }
 
-    def dpd_portugal_send_shipping(self, pickings):
+        if "price" in rate_response:
+            return {
+                "success": True,
+                "price": rate_response["price"],
+                "error_message": False,
+                "warning_message": False,
+            }
+        else:
+            return {
+                "success": False,
+                "price": 0.0,
+                "error_message": self.env._(
+                    "Unable to calculate rate: %(message)s",
+                    message=rate_response.get("message", "Unknown error"),
+                ),
+                "warning_message": False,
+            }
+
+    def dpd_pt_send_shipping(self, pickings):
         """Send shipment to DPD Portugal and generate labels."""
-        if self.delivery_type != "dpd_portugal":
-            return super().send_shipping(pickings)
-
-        self.ensure_one()
         result = []
-
         for picking in pickings:
             # Validate picking data
-            self._validate_dpd_portugal_picking(picking)
+            self._validate_dpd_pt_picking(picking)
 
             # Prepare shipment data
-            shipment_data = self._prepare_dpd_portugal_shipment_data(picking)
+            shipment_data = self._prepare_dpd_pt_shipment_data(picking)
 
             # Create shipment using account-based request
-            shipment_response = self._dpd_portugal_request_with_account(
+            shipment_response = self._dpd_pt_request_with_account(
                 "shipment/create", shipment_data, picking
             ).json()
 
@@ -182,33 +165,29 @@ class DeliveryCarrier(models.Model):
                 picking.carrier_tracking_ref = tracking_number
 
                 # Get label using account
-                label_response = self._dpd_portugal_request_with_account(
+                label_response = self._dpd_pt_request_with_account(
                     f"shipment/label/{tracking_number}",
                     {"format": self.dpd_portugal_label_format},
                     picking,
                 )
                 label_content = label_response.content
 
-                # Create attachment for label
-                attachment = self.env["ir.attachment"].create(
-                    {
-                        "name": (
-                            f"DPD_Portugal_Label_{tracking_number}"
-                            f".{self.dpd_portugal_label_format.lower()}"
-                        ),
-                        "type": "binary",
-                        "datas": base64.b64encode(label_content),
-                        "res_model": "stock.picking",
-                        "res_id": picking.id,
-                    }
+                # Post message with label attachment
+                label_name = (
+                    f"DPD_Portugal_Label_{tracking_number}"
+                    f".{self.dpd_portugal_label_format.lower()}"
                 )
-                picking.message_post(
+                message = picking.message_post(
                     body=self.env._("DPD Portugal label generated"),
-                    attachment_ids=[attachment.id],
+                    attachments=[(label_name, label_content)],
                 )
 
                 # Send email if enabled
-                if self.dpd_portugal_send_label_email and picking.partner_id.email:
+                if (
+                    self.dpd_portugal_send_label_email
+                    and picking.partner_id.email
+                    and message.attachment_ids
+                ):
                     template = self.env.ref(
                         "delivery_dpd_portugal.email_template_dpd_label",
                         raise_if_not_found=False,
@@ -218,7 +197,7 @@ class DeliveryCarrier(models.Model):
                             picking.id,
                             force_send=True,
                             email_values={
-                                "attachment_ids": [(4, attachment.id)],
+                                "attachment_ids": [(4, message.attachment_ids[0].id)],
                                 "email_to": picking.partner_id.email,
                             },
                         )
@@ -239,7 +218,7 @@ class DeliveryCarrier(models.Model):
 
         return result
 
-    def dpd_portugal_get_tracking_link(self, picking):
+    def dpd_pt_get_tracking_link(self, picking):
         """Return DPD Portugal tracking link for the given picking.
 
         :param picking: stock.picking record
@@ -249,30 +228,22 @@ class DeliveryCarrier(models.Model):
             return f"https://www.dpd.pt/rastreamento?parcelNumber={picking.carrier_tracking_ref}"
         return False
 
-    def dpd_portugal_tracking_state_update(self, picking):
+    def dpd_pt_tracking_state_update(self, picking):
         """Update tracking state from DPD Portugal."""
-        if self.delivery_type != "dpd_portugal" or not picking.carrier_tracking_ref:
-            return super().tracking_state_update(picking)
-
-        tracking_data = self._dpd_portugal_request_with_account(
+        tracking_data = self._dpd_pt_request_with_account(
             f"shipment/track/{picking.carrier_tracking_ref}", {}, picking
         ).json()
 
         if "status" in tracking_data:
             # Update picking tracking state
             picking.tracking_state = tracking_data["status"]
-            picking.tracking_state_history = [
-                (
-                    0,
-                    0,
-                    {
-                        "tracking_number": picking.carrier_tracking_ref,
-                        "state": tracking_data["status"],
-                        "description": tracking_data.get("description", ""),
-                        "date": fields.Datetime.now(),
-                    },
-                )
-            ]
+            tracking_vals = {
+                "tracking_number": picking.carrier_tracking_ref,
+                "state": tracking_data["status"],
+                "description": tracking_data.get("description", ""),
+                "date": fields.Datetime.now(),
+            }
+            picking.tracking_state_history = [(0, 0, tracking_vals)]
 
             # Log tracking update
             picking.message_post(
@@ -283,14 +254,13 @@ class DeliveryCarrier(models.Model):
                 )
             )
 
-    def dpd_portugal_cancel_shipment(self, pickings):
+    def dpd_pt_cancel_shipment(self, pickings):
         """Cancel DPD Portugal shipment."""
-        self.ensure_one()
         for picking in pickings:
             if not picking.carrier_tracking_ref:
                 continue
 
-            response = self._dpd_portugal_request_with_account(
+            response = self._dpd_pt_request_with_account(
                 f"shipment/cancel/{picking.carrier_tracking_ref}", {}, picking
             ).json()
 
@@ -310,7 +280,7 @@ class DeliveryCarrier(models.Model):
                     )
                 )
 
-    def _prepare_dpd_portugal_shipment_data(self, source):
+    def _prepare_dpd_pt_shipment_data(self, source):
         """Prepare shipment data for DPD Portugal API."""
         # Get sender and recipient information
         if source.partner_id and source.warehouse_id:
@@ -400,7 +370,7 @@ class DeliveryCarrier(models.Model):
 
         return shipment_data
 
-    def _validate_dpd_portugal_picking(self, picking):
+    def _validate_dpd_pt_picking(self, picking):
         """Validate picking data for DPD Portugal shipment."""
         required_fields = ["partner_id", "warehouse_id"]
         missing_fields = [
@@ -416,12 +386,12 @@ class DeliveryCarrier(models.Model):
             )
 
         # Validate addresses
-        self._validate_dpd_portugal_address(
+        self._validate_dpd_pt_address(
             picking.warehouse_id.partner_id or picking.company_id.partner_id, "sender"
         )
-        self._validate_dpd_portugal_address(picking.partner_id, "recipient")
+        self._validate_dpd_pt_address(picking.partner_id, "recipient")
 
-    def _validate_dpd_portugal_address(self, partner, address_type):
+    def _validate_dpd_pt_address(self, partner, address_type):
         """Validate address for DPD Portugal shipment."""
         required_fields = ["name", "street", "city", "zip", "country_id"]
         missing_fields = [
@@ -437,11 +407,11 @@ class DeliveryCarrier(models.Model):
                 )
             )
 
-    def _dpd_portugal_get_api_url(self):
+    def _dpd_pt_get_api_url(self):
         """Get API URL based on environment."""
-        return PROD_BASE_URL if self.dpd_portugal_prod_environment else TEST_BASE_URL
+        return PROD_BASE_URL if self.prod_environment else TEST_BASE_URL
 
-    def _dpd_portugal_request_with_account(self, method, data, picking):
+    def _dpd_pt_request_with_account(self, method, data, picking):
         """Execute a DPD Portugal API request using delivery_carrier_account.
 
         :param method: API method name (e.g. 'shipment/create', 'shipment/rate')
@@ -455,7 +425,7 @@ class DeliveryCarrier(models.Model):
                 self.env._("Please configure a DPD Portugal carrier account.")
             )
 
-        base_url = self._dpd_portugal_get_api_url()
+        base_url = self._dpd_pt_get_api_url()
         full_url = f"{base_url}/{method.lstrip('/')}"
 
         headers = {"Content-Type": "application/json"}
@@ -479,7 +449,7 @@ class DeliveryCarrier(models.Model):
             ) from exc
 
         if response.status_code not in (200, 201):
-            error_msg = self._dpd_portugal_extract_error_message(response)
+            error_msg = self._dpd_pt_extract_error_message(response)
             raise UserError(
                 self.env._(
                     "DPD Portugal API error (HTTP %(code)s): %(text)s",
@@ -491,7 +461,7 @@ class DeliveryCarrier(models.Model):
         _logger.info("DPD Portugal %s response OK", method)
         return response
 
-    def _dpd_portugal_extract_error_message(self, response):
+    def _dpd_pt_extract_error_message(self, response):
         """Extract error message from API response."""
         try:
             error_data = response.json()

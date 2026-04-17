@@ -10,11 +10,11 @@
                 <page
                     string="DPD Portugal Configuration"
                     name="dpd_portugal_configuration"
-                    invisible="delivery_type != 'dpd_portugal'"
+                    invisible="delivery_type != 'dpd_pt'"
                 >
                     <group>
                         <group string="Configuration">
-                            <field name="dpd_portugal_prod_environment" />
+                            <field name="prod_environment" />
                         </group>
                         <group string="Service Configuration">
                             <field name="dpd_portugal_service_type" />
@@ -42,18 +42,6 @@
                         </group>
                     </group>
                 </page>
-            </xpath>
-        </field>
-    </record>
-
-    <!-- DPD Portugal Carrier List View -->
-    <record id="view_delivery_carrier_list_dpd_portugal" model="ir.ui.view">
-        <field name="name">delivery.carrier.list.dpd_portugal</field>
-        <field name="model">delivery.carrier</field>
-        <field name="inherit_id" ref="delivery.view_delivery_carrier_tree" />
-        <field name="arch" type="xml">
-            <xpath expr="//field[@name='delivery_type']" position="after">
-                <field name="dpd_portugal_service_type" optional="show" />
             </xpath>
         </field>
     </record>
